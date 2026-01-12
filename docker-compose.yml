@@ -5,7 +5,7 @@ services:
     image: oitc/modbus-server:latest
     container_name: factory-plc
     ports:
-      - "5020:502" # Port exposé en 5020 sur l'hôte, 502 en interne
+      - "5020:5020" # Port exposé en 5020 sur l'hôte, 502 en interne
     networks:
       - factory-net
 
