@@ -1,0 +1,149 @@
+version: '3'
+
+networks:
+  net-internet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.100.0.0/24
+  
+  net-dmz:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.100.10.0/24
+
+  net-control:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.100.20.0/24
+
+services:
+  # --- ZONE EXTERNE ---
+  attacker:
+    image: python:3.9-slim
+    container_name: attacker
+    tty: true
+    networks:
+      net-internet:
+        ipv4_address: 10.100.0.66
+    command: >
+      bash -c "apt-get update && apt-get install -y iputils-ping nmap netcat-traditional ssh curl &&
+      echo 'Ready to attack' && tail -f /dev/null"
+
+  # --- FIREWALL EDGE (.254) ---
+  firewall-edge:
+    image: alpine:latest
+    container_name: firewall-edge
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    networks:
+      net-internet:
+        ipv4_address: 10.100.0.254
+      net-dmz:
+        ipv4_address: 10.100.10.253
+    command: /bin/sh -c "apk add iptables && echo 'FW Edge UP' && tail -f /dev/null"
+
+  # --- DMZ ---
+  scada-srv:
+    image: python:3.9-slim
+    container_name: scada-srv
+    networks:
+      net-dmz:
+        ipv4_address: 10.100.10.10
+    # FIX: Utilisation du pipe (|) pour un bloc multi-ligne propre
+    command: |
+      python3 -u -c "
+      import socket, time
+      print('SCADA STARTING...', flush=True)
+      while True:
+          try:
+              s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+              s.settimeout(2)
+              s.connect(('10.100.20.50', 502))
+              s.send(b'READ_DATA')
+              data = s.recv(1024)
+              print(f'[SCADA] Lecture PLC OK: {data.decode()}', flush=True)
+              s.close()
+          except Exception as e:
+              print(f'[SCADA] Erreur connexion: {e}', flush=True)
+          time.sleep(5)
+      "
+
+  jumphost:
+    image: lscr.io/linuxserver/openssh-server:latest
+    container_name: jumphost
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - PASSWORD_ACCESS=true
+      - USER_PASSWORD=securepass
+      - USER_NAME=admin
+    networks:
+      net-dmz:
+        ipv4_address: 10.100.10.99
+
+  # --- FIREWALL OT (.254) ---
+  firewall-ot:
+    image: alpine:latest
+    container_name: firewall-ot
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.ip_forward=1
+    networks:
+      net-dmz:
+        ipv4_address: 10.100.10.254
+      net-control:
+        ipv4_address: 10.100.20.254
+    command: /bin/sh -c "apk add iptables && echo 'FW OT UP' && tail -f /dev/null"
+
+  # --- CONTROL ---
+  plc-pump:
+    image: python:3.9-alpine
+    container_name: plc-pump
+    networks:
+      net-control:
+        ipv4_address: 10.100.20.50
+    # FIX: Syntaxe Python pure encapsulée, indentation stricte
+    command: |
+      python3 -u -c "
+      import socket
+      print('PLC BOOTING...', flush=True)
+      s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+      s.bind(('0.0.0.0', 502))
+      s.listen(5)
+      print('PLC Modbus Server Started on 502', flush=True)
+      while True:
+          try:
+              conn, addr = s.accept()
+              data = conn.recv(1024)
+              if data:
+                  conn.send(b'PUMP_PRESSURE_80_BAR')
+              conn.close()
+          except Exception as e:
+              print(e, flush=True)
+      "
+
+  hmi-panel:
+    image: python:3.9-alpine
+    container_name: hmi-panel
+    networks:
+      net-control:
+        ipv4_address: 10.100.20.51
+    # FIX: Serveur Web simple
+    command: |
+      python3 -u -c "
+      import http.server, socketserver
+      class Handler(http.server.SimpleHTTPRequestHandler):
+          def do_GET(self):
+              self.send_response(200)
+              self.end_headers()
+              self.wfile.write(b'<h1>INTERFACE IHM AQUAPURE</h1><p>Status: OPERATIONAL</p>')
+      print('HMI Web Server Started on 80', flush=True)
+      socketserver.TCPServer(('0.0.0.0', 80), Handler).serve_forever()
+      "
