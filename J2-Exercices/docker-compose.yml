@@ -1,20 +1,24 @@
 version: '3'
 services:
+  # L'AUTOMATE
   plc:
-    image: python:3.9-slim
+    image: python:3.10-slim
     container_name: lab_plc
     volumes:
       - ./plc.py:/plc.py
-    command: sh -c "pip install pymodbus && python /plc.py"
+    # ICI : On force la version 3.5.2 qui est stable
+    command: sh -c "pip install pymodbus==3.5.2 && python /plc.py"
     ports:
-      - "5020:502" # Port exposé sur l'hôte si besoin
+      - "5020:502"
     networks:
       - scada-net
 
+  # L'ATTAQUANT
   attacker:
-    image: python:3.9-slim
+    image: python:3.10-slim
     container_name: lab_attacker
-    command: sh -c "pip install pymodbus scapy && tail -f /dev/null"
+    # Pareil ici pour être compatible
+    command: sh -c "pip install pymodbus==3.5.2 && tail -f /dev/null"
     networks:
       - scada-net
 
