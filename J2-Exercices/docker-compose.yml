@@ -1,0 +1,23 @@
+version: '3'
+services:
+  plc:
+    image: python:3.9-slim
+    container_name: lab_plc
+    volumes:
+      - ./plc.py:/plc.py
+    command: sh -c "pip install pymodbus && python /plc.py"
+    ports:
+      - "5020:502" # Port exposé sur l'hôte si besoin
+    networks:
+      - scada-net
+
+  attacker:
+    image: python:3.9-slim
+    container_name: lab_attacker
+    command: sh -c "pip install pymodbus scapy && tail -f /dev/null"
+    networks:
+      - scada-net
+
+networks:
+  scada-net:
+    driver: bridge
