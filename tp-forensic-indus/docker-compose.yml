@@ -1,0 +1,25 @@
+version: '3'
+services:
+  # La victime : Simule un automate industriel (PLC)
+  plc-target:
+    image: python:3.9-slim
+    container_name: plc-target
+    command: sh -c "apt-get update && apt-get install -y netcat-openbsd tcpdump procps && pip install pymodbus && python3 /app/fake_plc.py"
+    volumes:
+      - ./scripts:/app
+    networks:
+      - ot_network
+    cap_add:
+      - NET_ADMIN  # Nécessaire pour tcpdump
+
+  # L'attaquant
+  attacker-box:
+    image: kalilinux/kali-rolling
+    container_name: attacker-box
+    command: tail -f /dev/null
+    networks:
+      - ot_network
+
+networks:
+  ot_network:
+    driver: bridge
