@@ -35,6 +35,6 @@ def start_honeypot():
             pass
         finally:
             client_sock.close()
-
+ 
 if __name__ == '__main__':
     start_honeypot()
